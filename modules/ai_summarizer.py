@@ -15,16 +15,23 @@ logger = get_logger('ai_summarizer')
 
 class AISummarizer:
     """AI-powered email content summarizer."""
-    
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514"):
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-sonnet-4-20250514",
+        prompts: Dict[str, str] = None
+    ):
         """Initialize AI summarizer.
-        
+
         Args:
             api_key: Anthropic API key.
             model: Claude model to use.
+            prompts: Profile-specific prompts dictionary.
         """
         self.client = anthropic.Anthropic(api_key=api_key)
         self.model = model
+        self.prompts = prompts or {}
         logger.info(f"Initialized AI summarizer with model: {model}")
     
     def summarize_email(self, email: EmailContent) -> Dict[str, Any]:
@@ -85,97 +92,34 @@ class AISummarizer:
     
     def _build_email_prompt(self, email: EmailContent) -> List[Dict[str, Any]]:
         """Build prompt messages for email summarization.
-        
+
         Args:
             email: EmailContent object.
-            
+
         Returns:
             List of message dicts for Claude API.
         """
         # Extract text content
         body_text = email.get_body()
-        
+
         # Clean HTML if needed
         if '<html' in body_text.lower() or '<body' in body_text.lower():
             body_text = self._clean_html(body_text)
-        
+
         # Build content blocks
         content_blocks = []
-        
-        # Add text content with UPDATED PROMPT
-        system_prompt = """You are a JSON data extractor for school emails. 
 
-CRITICAL: Your response MUST be ONLY valid JSON. No markdown, no explanations, no text before or after the JSON.
+        # Get profile-specific prompts
+        email_user_template = self.prompts.get('email_user_template', '')
 
-Extract these fields from the email:
-1. summary: 3-5 sentences with specific event names, dates, times (plain text, no markdown)
-2. events: Array of event objects - create ONE object per event (separate Monday event from Tuesday event)
-3. action_items: What parents must do
-4. importance: high/medium/low
-5. key_dates: Array of date strings
+        # Build the text prompt using the template
+        text_prompt = email_user_template.format(
+            sender=email.sender,
+            subject=email.subject,
+            date=email.date,
+            body=body_text
+        )
 
-For multi-day emails (e.g. "Monday: Raven Run, Tuesday: Field Trip, Thursday: Party"), create SEPARATE event objects for EACH day.
-
-Include: Kindergarten-specific AND school-wide events
-Exclude: Grade 1-5 specific events only
-
-JSON schema:
-{
-  "summary": "Detailed summary with specific event names, dates, and requirements - NOT vague descriptions",
-  "events": [
-    {
-      "title": "SPECIFIC event name (e.g., 'Raven Run', 'Pumpkin Patch Field Trip')",
-      "date": "Exact date with day of week (e.g., 'Monday, October 27th')",
-      "time": "Exact time or time range (e.g., '1:45 PM' or '7:45 AM - 11:45 AM')",
-      "location": "Specific location",
-      "description": "ALL relevant details: schedule changes, what to bring, dress code, costs, permissions needed",
-      "priority": "high/medium/low",
-      "scope": "kindergarten-specific / school-wide / all-grades"
-    }
-  ],
-  "action_items": [
-    {
-      "action": "Specific action with details (not vague)",
-      "deadline": "Exact deadline if mentioned",
-      "priority": "high/medium/low"
-    }
-  ],
-  "importance": "high/medium/low",
-  "key_dates": ["All dates mentioned in format: 'Day, Month Date'"]
-}
-
-**EXAMPLES OF GOOD vs BAD EXTRACTION:**
-
-❌ BAD: "field trip this week"
-✅ GOOD: "Pumpkin Patch Field Trip on Tuesday, October 28th from 7:45 AM - 11:45 AM (modified morning schedule only)"
-
-❌ BAD: "running event"  
-✅ GOOD: "Raven Run at 1:45 PM on the school field on Monday, October 27th"
-
-❌ BAD: "parent conferences coming up"
-✅ GOOD: "Parent-Teacher Conferences on Friday, October 31st (no school for students, all-day conference schedule)"
-
-**BE SPECIFIC. EXTRACT EVERY DETAIL. Parents need actionable information, not vague summaries.**
-
-CRITICAL OUTPUT REQUIREMENT: Return ONLY the JSON object. No markdown, no explanations, no text before/after. Just the raw JSON starting with { and ending with }"""
-        
-        text_prompt = f"""Email from: {email.sender}
-Subject: {email.subject}
-Date: {email.date}
-
-Content:
-{body_text[:8000]}
-
-Please analyze this school email and extract ALL SPECIFIC DETAILS about kindergarten-relevant AND school-wide events. 
-
-Be concrete: extract exact event names (not "running event" but "Raven Run"), exact times, modified schedules, what parents need to bring/do, permission requirements, costs, etc.
-
-Your summary must include specific event names and dates, not vague descriptions. Filter out grade 1-5 specific content only.
-
-CRITICAL REMINDER: If the email mentions multiple events (e.g., Monday event, Tuesday event, Thursday event, Friday event), create a SEPARATE event object for EACH ONE. Do not combine them into a single event or mention them only in the summary text.
-
-OUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW JSON OBJECT."""
-        
         content_blocks.append({
             "type": "text",
             "text": text_prompt
@@ -183,13 +127,15 @@ OUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW
         
         # Add images if present
         if email.has_images():
-            logger.info(f"Adding {len(email.images)} images to analysis")
-            
-            for idx, img in enumerate(email.images[:5]):  # Limit to 5 images
+            image_instruction_template = self.prompts.get('image_instruction', 'Image {index}: {filename}')
+            max_images = len(email.images)  # Process all filtered images
+            logger.info(f"Adding {min(len(email.images), max_images)} images to analysis")
+
+            for idx, img in enumerate(email.images[:max_images]):
                 try:
                     # Encode image to base64
                     img_b64 = base64.b64encode(img['data']).decode('utf-8')
-                    
+
                     content_blocks.append({
                         "type": "image",
                         "source": {
@@ -198,14 +144,38 @@ OUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW
                             "data": img_b64
                         }
                     })
-                    
+
+                    # Add image instruction
+                    image_instruction = image_instruction_template.format(
+                        index=idx + 1,
+                        filename=img.get('filename', 'inline image')
+                    )
+
                     content_blocks.append({
                         "type": "text",
-                        "text": f"Image {idx + 1}: {img.get('filename', 'inline image')} - Extract any kindergarten-relevant OR school-wide event information from this image. Filter out grade-specific (1-5) content."
+                        "text": image_instruction
                     })
-                    
+
                 except Exception as e:
                     logger.error(f"Error encoding image {idx}: {e}")
+
+        # Add PDF attachment text if present
+        if email.has_attachments():
+            pdf_instruction_template = self.prompts.get('pdf_instruction', 'PDF Attachment: {filename}')
+            for attachment in email.attachments:
+                if attachment.get('extracted_text'):
+                    filename = attachment.get('filename', 'document.pdf')
+                    extracted_text = attachment['extracted_text']
+
+                    logger.info(f"Adding PDF text from {filename} ({len(extracted_text)} chars)")
+
+                    # Add PDF instruction
+                    pdf_instruction = pdf_instruction_template.format(filename=filename)
+
+                    content_blocks.append({
+                        "type": "text",
+                        "text": f"{pdf_instruction}\n\n{extracted_text}"
+                    })
         
         return [
             {
@@ -294,28 +264,37 @@ OUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW
         date_range: str
     ) -> Dict[str, Any]:
         """Create consolidated digest from multiple email summaries.
-        
+
         Args:
             email_summaries: List of email summary dicts.
             date_range: Date range being summarized (e.g., "Oct 10-13, 2025").
-            
+
         Returns:
             Digest dictionary with executive summary and aggregated content.
         """
         logger.info(f"Creating digest from {len(email_summaries)} email summaries")
-        
+
         if not email_summaries:
             return {
-                'executive_summary': 'No new school emails in this period.',
+                'executive_summary': 'No new emails in this period.',
                 'event_calendar': [],
                 'action_items': [],
                 'important_announcements': []
             }
-        
-        # Build digest prompt
+
+        # Build digest prompt using profile template
         summaries_text = json.dumps(email_summaries, indent=2)
-        
-        prompt = f"""You are creating a comprehensive weekly digest of school communications for parents of a KINDERGARTEN student.
+
+        digest_prompt_template = self.prompts.get('digest_prompt_template', '')
+        prompt = digest_prompt_template.format(
+            date_range=date_range,
+            email_count=len(email_summaries),
+            summaries_json=summaries_text[:15000]  # Limit to avoid token overflow
+        )
+
+        # Fallback if no template (shouldn't happen but safety net)
+        if not prompt:
+            prompt = f"""You are creating a comprehensive digest.
 
 Date Range: {date_range}
 Number of Emails: {len(email_summaries)}

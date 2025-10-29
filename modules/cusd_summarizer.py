@@ -16,15 +16,19 @@ from .document_generator import DocumentGenerator
 
 class CUSDSummarizer:
     """Main application class for CUSD email summarization."""
-    
-    def __init__(self, config_path: str = None):
+
+    def __init__(self, config_path: str = None, profile: str = None):
         """Initialize the summarizer application.
-        
+
         Args:
             config_path: Optional path to config file.
+            profile: Profile name to use (e.g., 'cusd', 'hoa').
         """
-        # Load configuration
-        self.config = get_config(config_path)
+        # Load configuration with profile
+        from .config_manager import reset_config
+        reset_config()  # Reset global config to allow profile switching
+        self.config = get_config(config_path, profile)
+        self.profile = self.config.profile_name
         
         # Setup logging
         log_file = self.config.resolve_path(
@@ -52,35 +56,51 @@ class CUSDSummarizer:
         credentials_file = self.config.resolve_path('config/credentials.json')
         token_file = self.config.resolve_path('config/token.pickle')
         scopes = self.config.get('gmail', 'scopes')
-        
+
         self.gmail_client = GmailClient(
             credentials_file=str(credentials_file),
             token_file=str(token_file),
             scopes=scopes
         )
-        
-        # Email processor
+
+        # Email processor with profile-specific settings
         max_image_size = self.config.get('output', 'max_image_size_mb')
-        self.email_processor = EmailProcessor(max_image_size_mb=max_image_size)
-        
-        # AI summarizer
+        min_image_width = self.config.get('processing', 'min_image_width')
+        min_image_height = self.config.get('processing', 'min_image_height')
+        process_pdfs = self.config.get('processing', 'process_pdfs')
+
+        self.email_processor = EmailProcessor(
+            gmail_client=self.gmail_client,
+            max_image_size_mb=max_image_size,
+            min_image_width=min_image_width,
+            min_image_height=min_image_height,
+            process_pdfs=process_pdfs
+        )
+
+        # AI summarizer with profile-specific prompts
         api_key = self.config.get_ai_api_key()
         model = self.config.get('ai', 'model')
-        self.ai_summarizer = AISummarizer(api_key=api_key, model=model)
-        
-        # Tracker
+        prompts = self.config.get('prompts')
+
+        self.ai_summarizer = AISummarizer(
+            api_key=api_key,
+            model=model,
+            prompts=prompts
+        )
+
+        # Tracker with profile-specific database
         db_path = self.config.resolve_path(
-            self.config.get('tracking', 'database')
+            self.config.get('database', 'path')
         )
         self.tracker = EmailTracker(db_path=str(db_path))
-        
-        # Document generator
+
+        # Document generator with profile config
         output_dir = self.config.resolve_path(
             self.config.get('output', 'directory')
         )
         self.doc_generator = DocumentGenerator(output_dir=str(output_dir))
-        
-        self.logger.info("All components initialized successfully")
+
+        self.logger.info(f"All components initialized successfully for profile: {self.profile}")
     
     def run(self, force_reprocess: bool = False) -> Dict[str, Any]:
         """Run the complete summarization pipeline.
@@ -297,14 +317,20 @@ class CUSDSummarizer:
 def main():
     """Main entry point for command-line execution."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(
-        description='CUSD Email Summarizer - Automated school email digest generator'
+        description='Email Summarizer - Multi-profile automated email digest generator'
     )
     parser.add_argument(
         '--config',
         type=str,
         help='Path to config.json file'
+    )
+    parser.add_argument(
+        '--profile',
+        type=str,
+        default=None,
+        help='Profile to use (cusd, hoa, etc.). If not specified, uses default_profile from config.'
     )
     parser.add_argument(
         '--force',
@@ -316,11 +342,11 @@ def main():
         action='store_true',
         help='Show statistics and exit'
     )
-    
+
     args = parser.parse_args()
-    
+
     try:
-        summarizer = CUSDSummarizer(config_path=args.config)
+        summarizer = CUSDSummarizer(config_path=args.config, profile=args.profile)
         
         if args.stats:
             # Just show stats

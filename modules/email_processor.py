@@ -12,6 +12,14 @@ try:
 except ImportError:
     Image = None
 
+try:
+    from pypdf import PdfReader
+except ImportError:
+    try:
+        from PyPDF2 import PdfReader
+    except ImportError:
+        PdfReader = None
+
 from .logger import get_logger
 
 logger = get_logger('email_processor')
@@ -71,14 +79,29 @@ class EmailContent:
 
 class EmailProcessor:
     """Process Gmail API messages and extract content."""
-    
-    def __init__(self, max_image_size_mb: int = 5):
+
+    def __init__(
+        self,
+        gmail_client=None,
+        max_image_size_mb: int = 5,
+        min_image_width: int = 150,
+        min_image_height: int = 150,
+        process_pdfs: bool = False
+    ):
         """Initialize email processor.
-        
+
         Args:
+            gmail_client: GmailClient instance for downloading attachments.
             max_image_size_mb: Maximum image size to process in MB.
+            min_image_width: Minimum image width in pixels (filters out small images/logos).
+            min_image_height: Minimum image height in pixels (filters out small images/logos).
+            process_pdfs: Whether to download and extract text from PDF attachments.
         """
+        self.gmail_client = gmail_client
         self.max_image_size = max_image_size_mb * 1024 * 1024  # Convert to bytes
+        self.min_image_width = min_image_width
+        self.min_image_height = min_image_height
+        self.process_pdfs = process_pdfs
     
     def process_message(self, gmail_message: Dict[str, Any]) -> EmailContent:
         """Process a Gmail API message and extract content.
@@ -236,6 +259,14 @@ class EmailProcessor:
             elif mime_type == 'application/pdf':
                 attachment_info = self._extract_attachment_info(part, message_id)
                 if attachment_info:
+                    # Download and extract text if configured
+                    if self.process_pdfs and self.gmail_client and PdfReader:
+                        pdf_text = self._extract_pdf_text(
+                            message_id,
+                            attachment_info['attachment_id']
+                        )
+                        if pdf_text:
+                            attachment_info['extracted_text'] = pdf_text
                     attachments.append(attachment_info)
         
         return text_body, html_body, images, attachments
@@ -307,20 +338,36 @@ class EmailProcessor:
                 return None
             
             data = self._decode_base64(body['data'])
-            
+
             # Check size
             if len(data) > self.max_image_size:
                 logger.warning(
                     f"Image {filename} too large ({len(data)} bytes), skipping"
                 )
                 return None
-            
-            # Validate image if PIL is available
+
+            # Validate image and check dimensions if PIL is available
+            img_width = None
+            img_height = None
+
             if Image:
                 try:
                     img = Image.open(io.BytesIO(data))
+                    img_width, img_height = img.size
+
+                    # Filter out small images (signatures, logos, decorative graphics)
+                    if img_width < self.min_image_width or img_height < self.min_image_height:
+                        logger.info(
+                            f"Image {filename} too small ({img_width}x{img_height}), "
+                            f"likely signature/logo - skipping"
+                        )
+                        return None
+
+                    # Verify image integrity
                     img.verify()
-                    logger.debug(f"Validated image: {filename} ({img.format})")
+                    logger.debug(
+                        f"Validated image: {filename} ({img.format}, {img_width}x{img_height})"
+                    )
                 except Exception as e:
                     logger.warning(f"Invalid image {filename}: {e}")
                     return None
@@ -330,7 +377,9 @@ class EmailProcessor:
                 'mime_type': mime_type,
                 'content_id': content_id,
                 'data': data,
-                'size': len(data)
+                'size': len(data),
+                'width': img_width,
+                'height': img_height
             }
             
         except Exception as e:
@@ -387,21 +436,80 @@ class EmailProcessor:
         
         return html
     
+    def _extract_pdf_text(
+        self,
+        message_id: str,
+        attachment_id: str,
+        max_chars: int = 10000
+    ) -> Optional[str]:
+        """Extract text from PDF attachment.
+
+        Args:
+            message_id: Gmail message ID.
+            attachment_id: Attachment ID.
+            max_chars: Maximum characters to extract (to avoid huge PDFs).
+
+        Returns:
+            Extracted text or None if extraction fails.
+        """
+        if not PdfReader:
+            logger.warning("PDF processing not available (pypdf/PyPDF2 not installed)")
+            return None
+
+        try:
+            # Download attachment
+            pdf_data = self.gmail_client.get_attachment(message_id, attachment_id)
+            if not pdf_data:
+                logger.warning(f"Failed to download PDF attachment {attachment_id}")
+                return None
+
+            # Extract text
+            pdf_file = io.BytesIO(pdf_data)
+            reader = PdfReader(pdf_file)
+
+            text_parts = []
+            total_chars = 0
+
+            for page_num, page in enumerate(reader.pages):
+                if total_chars >= max_chars:
+                    logger.info(f"PDF text extraction stopped at page {page_num} (max chars reached)")
+                    break
+
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_parts.append(page_text)
+                        total_chars += len(page_text)
+                except Exception as e:
+                    logger.warning(f"Error extracting text from page {page_num}: {e}")
+                    continue
+
+            if text_parts:
+                full_text = '\n\n'.join(text_parts)
+                logger.info(f"Extracted {len(full_text)} characters from PDF ({len(reader.pages)} pages)")
+                return full_text[:max_chars]  # Ensure we don't exceed limit
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Error processing PDF attachment {attachment_id}: {e}")
+            return None
+
     def save_image(self, image_data: Dict[str, Any], output_dir: Path) -> Path:
         """Save image data to file.
-        
+
         Args:
             image_data: Image dict with 'data' and 'filename'.
             output_dir: Directory to save image.
-            
+
         Returns:
             Path to saved image file.
         """
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         filepath = output_dir / image_data['filename']
-        
+
         # Ensure unique filename
         counter = 1
         while filepath.exists():
@@ -409,9 +517,9 @@ class EmailProcessor:
             ext = Path(image_data['filename']).suffix
             filepath = output_dir / f"{name}_{counter}{ext}"
             counter += 1
-        
+
         with open(filepath, 'wb') as f:
             f.write(image_data['data'])
-        
+
         logger.debug(f"Saved image to {filepath}")
         return filepath

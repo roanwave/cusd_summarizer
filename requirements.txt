@@ -10,6 +10,12 @@ anthropic>=0.34.0
 # Document Generation
 python-docx>=1.1.0
 
+# PDF Processing
+pypdf>=4.0.0
+
+# Image Processing
+Pillow>=10.0.0
+
 # Standard library (included for reference)
 # sqlite3 - Built-in
 # json - Built-in

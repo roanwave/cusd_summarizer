@@ -1,0 +1,90 @@
+{
+  "profile_name": "HOA",
+  "description": "Homeowners Association email summarizer with image and PDF processing",
+
+  "gmail": {
+    "label": "HOA",
+    "lookback_hours": 168
+  },
+
+  "processing": {
+    "min_image_width": 150,
+    "min_image_height": 150,
+    "max_images_per_email": 10,
+    "process_pdfs": true,
+    "body_char_limit": 12000
+  },
+
+  "prompts": {
+    "email_system": "You are a JSON data extractor for HOA (Homeowners Association) emails.\n\nCRITICAL: Your response MUST be ONLY valid JSON. No markdown, no explanations, no text before or after the JSON.\n\nExtract these fields from the email:\n1. summary: 3-5 sentences with specific details about HOA matters, events, and requirements\n2. events: Array of community events (meetings, social gatherings, maintenance schedules)\n3. action_items: What homeowners must do (compliance, payments, deadlines)\n4. compliance_items: Violations, architectural approvals, rule violations\n5. financial_items: Dues, assessments, budget information\n6. maintenance_items: Scheduled work, facility closures, construction notices\n7. importance: high/medium/low\n8. key_dates: Array of important dates\n\nJSON schema:\n{\n  \"summary\": \"Detailed summary with specific event names, dates, and requirements\",\n  \"events\": [\n    {\n      \"title\": \"Specific event name (e.g., 'HOA Board Meeting', 'Community BBQ')\",\n      \"date\": \"Exact date with day of week (e.g., 'Thursday, November 15th')\",\n      \"time\": \"Exact time or time range (e.g., '7:00 PM' or '5:00 PM - 8:00 PM')\",\n      \"location\": \"Specific location (e.g., 'Clubhouse', 'Community Pool')\",\n      \"description\": \"ALL relevant details: agenda items, RSVP requirements, parking, what to bring\",\n      \"priority\": \"high/medium/low\"\n    }\n  ],\n  \"action_items\": [\n    {\n      \"action\": \"Specific action required (e.g., 'Submit architectural approval form', 'Pay quarterly dues')\",\n      \"deadline\": \"Exact deadline if mentioned\",\n      \"priority\": \"high/medium/low\",\n      \"details\": \"Additional context\"\n    }\n  ],\n  \"compliance_items\": [\n    {\n      \"issue\": \"Compliance issue (e.g., 'Lawn maintenance required', 'Trash bin violation')\",\n      \"deadline\": \"Deadline to resolve\",\n      \"consequences\": \"What happens if not resolved\",\n      \"contact\": \"Who to contact for questions\"\n    }\n  ],\n  \"financial_items\": [\n    {\n      \"item\": \"Financial notice (e.g., 'Q4 2025 HOA Dues', 'Special Assessment for Pool Repair')\",\n      \"amount\": \"Dollar amount if specified\",\n      \"due_date\": \"Payment deadline\",\n      \"details\": \"Additional financial information\"\n    }\n  ],\n  \"maintenance_items\": [\n    {\n      \"title\": \"Maintenance or construction activity\",\n      \"dates\": \"When it will occur\",\n      \"impact\": \"How it affects residents (closures, noise, parking)\",\n      \"details\": \"Additional information\"\n    }\n  ],\n  \"importance\": \"high/medium/low\",\n  \"key_dates\": [\"All dates mentioned in format: 'Day, Month Date'\"]\n}\n\n**IMPORTANT: Be specific and extract all details. Homeowners need clear, actionable information about community matters, compliance requirements, and financial obligations.**\n\nCRITICAL OUTPUT REQUIREMENT: Return ONLY the JSON object. No markdown, no explanations, no text before/after. Just the raw JSON starting with { and ending with }",
+
+    "email_user_template": "Email from: {sender}\nSubject: {subject}\nDate: {date}\n\nContent:\n{body}\n\nPlease analyze this HOA email and extract ALL SPECIFIC DETAILS about:\n- Community events and meetings\n- Action items and deadlines\n- Compliance requirements or violations\n- Financial notices (dues, assessments, budgets)\n- Maintenance schedules and facility closures\n\nBe specific: extract exact dates, times, amounts, deadlines, and contact information.\n\nCRITICAL REMINDER: Create separate entries for different items. For example, if the email mentions both a board meeting AND a pool closure, create separate event/maintenance entries.\n\nOUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW JSON OBJECT.",
+
+    "image_instruction": "Image {index}: {filename} - Extract any relevant HOA information from this image including: event flyers, violation photos, financial charts, maps, community notices, maintenance schedules. Ignore email signature images, logos, and small decorative graphics.",
+
+    "pdf_instruction": "PDF Attachment: {filename} - Extract key information including: dates, deadlines, action items, financial details, meeting agendas, compliance requirements, maintenance schedules.",
+
+    "digest_prompt_template": "You are creating a comprehensive digest of HOA communications for a homeowner.\n\nDate Range: {date_range}\nNumber of Emails: {email_count}\n\nRaw Email Data:\n{summaries_json}\n\n**YOUR TASK: CREATE AN ACTIONABLE HOA DIGEST**\n\nAnalyze all emails and create a digest with SIX sections:\n\n## SECTION 1: EXECUTIVE SUMMARY\n2-3 sentences highlighting the most important items requiring immediate attention.\n\n## SECTION 2: COMPLIANCE ITEMS\nAny violations, architectural approvals, or rule compliance matters requiring homeowner action.\nInclude deadlines and consequences.\n\n## SECTION 3: FINANCIAL NOTICES\nDues, assessments, budget information, payment deadlines.\nBe specific about amounts and due dates.\n\n## SECTION 4: UPCOMING EVENTS\nCommunity meetings, social events, board meetings.\nCombine information from multiple emails about the SAME event into ONE entry.\n\n## SECTION 5: MAINTENANCE SCHEDULE\nScheduled maintenance, facility closures, construction projects.\nInclude dates, times, and impact on residents.\n\n## SECTION 6: IMPORTANT ANNOUNCEMENTS\nOther important information: policy changes, reminders, community updates.\n\n**CRITICAL RULES:**\n\n1. **DEDUPLICATE**: Combine information from multiple emails about the same item\n2. **BE SPECIFIC**: Include exact dates, times, amounts, deadlines\n3. **PRIORITIZE**: Put urgent compliance and financial items first\n4. **ACTIONABLE**: Make it clear what homeowners need to do and by when\n\nReturn as JSON:\n{\n  \"executive_summary\": \"2-3 sentence overview of most important items\",\n  \"compliance_items\": [\n    {\n      \"issue\": \"What needs to be addressed\",\n      \"deadline\": \"When it must be resolved\",\n      \"details\": \"Full information and consequences\",\n      \"sources\": [\"Email subjects that mentioned this\"]\n    }\n  ],\n  \"financial_notices\": [\n    {\n      \"item\": \"What is due\",\n      \"amount\": \"Dollar amount\",\n      \"due_date\": \"Payment deadline\",\n      \"details\": \"Additional information\",\n      \"sources\": [\"Email subjects\"]\n    }\n  ],\n  \"event_calendar\": [\n    {\n      \"title\": \"Event name\",\n      \"date\": \"Full date with day\",\n      \"time\": \"Time range\",\n      \"location\": \"Where it takes place\",\n      \"details\": \"All relevant information\",\n      \"sources\": [\"Email subjects\"]\n    }\n  ],\n  \"maintenance_schedule\": [\n    {\n      \"title\": \"Maintenance activity\",\n      \"dates\": \"When it occurs\",\n      \"impact\": \"How it affects residents\",\n      \"details\": \"Additional information\",\n      \"sources\": [\"Email subjects\"]\n    }\n  ],\n  \"action_items\": [\n    {\n      \"action\": \"What homeowner must do\",\n      \"due_date\": \"Deadline\",\n      \"priority\": \"high/medium/low\",\n      \"details\": \"Additional context\"\n    }\n  ],\n  \"important_announcements\": [\n    \"Announcement text as string\"\n  ]\n}\n\n**CRITICAL**: All list items should include sources (which emails mentioned them) to help homeowners find original communications if needed.\n\nFocus on clarity, specificity, and actionability. Homeowners need to know exactly what's required and by when."
+  },
+
+  "document": {
+    "title_template": "HOA Digest - {date}",
+    "subtitle": "Compiled by HOA Email Summarizer",
+    "sections": [
+      {
+        "name": "executive_summary",
+        "title": "Executive Summary",
+        "type": "text"
+      },
+      {
+        "name": "compliance_items",
+        "title": "Compliance Items",
+        "type": "compliance_list"
+      },
+      {
+        "name": "financial_notices",
+        "title": "Financial Notices",
+        "type": "financial_list"
+      },
+      {
+        "name": "event_calendar",
+        "title": "Upcoming Events",
+        "type": "table",
+        "columns": ["Event", "Date", "Time", "Location"]
+      },
+      {
+        "name": "maintenance_schedule",
+        "title": "Maintenance Schedule",
+        "type": "maintenance_list"
+      },
+      {
+        "name": "action_items",
+        "title": "Action Items",
+        "type": "priority_list"
+      },
+      {
+        "name": "important_announcements",
+        "title": "Important Announcements",
+        "type": "bullet_list"
+      },
+      {
+        "name": "individual_emails",
+        "title": "Individual Email Summaries",
+        "type": "email_summaries"
+      }
+    ]
+  },
+
+  "output": {
+    "directory": "./output/hoa",
+    "filename_pattern": "HOA_Digest_{date}.docx"
+  },
+
+  "database": {
+    "path": "./data/hoa_emails.db"
+  },
+
+  "logging": {
+    "file": "./logs/hoa_summarizer.log"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "profile_name": "CUSD",
+  "description": "Clovis Unified School District email summarizer for kindergarten parent",
+
+  "gmail": {
+    "label": "CUSD",
+    "lookback_hours": 72
+  },
+
+  "processing": {
+    "min_image_width": 150,
+    "min_image_height": 150,
+    "max_images_per_email": 5,
+    "process_pdfs": false,
+    "body_char_limit": 8000
+  },
+
+  "prompts": {
+    "email_system": "You are a JSON data extractor for school emails.\n\nCRITICAL: Your response MUST be ONLY valid JSON. No markdown, no explanations, no text before or after the JSON.\n\nExtract these fields from the email:\n1. summary: 3-5 sentences with specific event names, dates, times (plain text, no markdown)\n2. events: Array of event objects - create ONE object per event (separate Monday event from Tuesday event)\n3. action_items: What parents must do\n4. importance: high/medium/low\n5. key_dates: Array of date strings\n\nFor multi-day emails (e.g. \"Monday: Raven Run, Tuesday: Field Trip, Thursday: Party\"), create SEPARATE event objects for EACH day.\n\nInclude: Kindergarten-specific AND school-wide events\nExclude: Grade 1-5 specific events only\n\nJSON schema:\n{\n  \"summary\": \"Detailed summary with specific event names, dates, and requirements - NOT vague descriptions\",\n  \"events\": [\n    {\n      \"title\": \"SPECIFIC event name (e.g., 'Raven Run', 'Pumpkin Patch Field Trip')\",\n      \"date\": \"Exact date with day of week (e.g., 'Monday, October 27th')\",\n      \"time\": \"Exact time or time range (e.g., '1:45 PM' or '7:45 AM - 11:45 AM')\",\n      \"location\": \"Specific location\",\n      \"description\": \"ALL relevant details: schedule changes, what to bring, dress code, costs, permissions needed\",\n      \"priority\": \"high/medium/low\",\n      \"scope\": \"kindergarten-specific / school-wide / all-grades\"\n    }\n  ],\n  \"action_items\": [\n    {\n      \"action\": \"Specific action with details (not vague)\",\n      \"deadline\": \"Exact deadline if mentioned\",\n      \"priority\": \"high/medium/low\"\n    }\n  ],\n  \"importance\": \"high/medium/low\",\n  \"key_dates\": [\"All dates mentioned in format: 'Day, Month Date'\"]\n}\n\n**EXAMPLES OF GOOD vs BAD EXTRACTION:**\n\n❌ BAD: \"field trip this week\"\n✅ GOOD: \"Pumpkin Patch Field Trip on Tuesday, October 28th from 7:45 AM - 11:45 AM (modified morning schedule only)\"\n\n❌ BAD: \"running event\"  \n✅ GOOD: \"Raven Run at 1:45 PM on the school field on Monday, October 27th\"\n\n❌ BAD: \"parent conferences coming up\"\n✅ GOOD: \"Parent-Teacher Conferences on Friday, October 31st (no school for students, all-day conference schedule)\"\n\n**BE SPECIFIC. EXTRACT EVERY DETAIL. Parents need actionable information, not vague summaries.**\n\nCRITICAL OUTPUT REQUIREMENT: Return ONLY the JSON object. No markdown, no explanations, no text before/after. Just the raw JSON starting with { and ending with }",
+
+    "email_user_template": "Email from: {sender}\nSubject: {subject}\nDate: {date}\n\nContent:\n{body}\n\nPlease analyze this school email and extract ALL SPECIFIC DETAILS about kindergarten-relevant AND school-wide events.\n\nBe concrete: extract exact event names (not \"running event\" but \"Raven Run\"), exact times, modified schedules, what parents need to bring/do, permission requirements, costs, etc.\n\nYour summary must include specific event names and dates, not vague descriptions. Filter out grade 1-5 specific content only.\n\nCRITICAL REMINDER: If the email mentions multiple events (e.g., Monday event, Tuesday event, Thursday event, Friday event), create a SEPARATE event object for EACH ONE. Do not combine them into a single event or mention them only in the summary text.\n\nOUTPUT ONLY JSON - NO MARKDOWN, NO EXPLANATIONS, NO ```json FENCES. JUST THE RAW JSON OBJECT.",
+
+    "image_instruction": "Image {index}: {filename} - Extract any kindergarten-relevant OR school-wide event information from this image. Filter out grade-specific (1-5) content.",
+
+    "digest_prompt_template": "You are creating a comprehensive weekly digest of school communications for parents of a KINDERGARTEN student.\n\nDate Range: {date_range}\nNumber of Emails: {email_count}\n\nRaw Email Data (each email already filtered for kindergarten + school-wide content):\n{summaries_json}\n\n**YOUR TASK: CREATE AN ACTIONABLE DIGEST**\n\nAnalyze all emails and create a digest with THREE sections:\n\n## SECTION 1: UPCOMING EVENTS (Chronological Calendar)\nCombine information from multiple emails about the SAME event into ONE comprehensive entry.\nPRESERVE all DIFFERENT events as separate entries.\n\nFor each unique event, provide:\n- Full event name\n- Complete date/time (with day of week)\n- Location\n- ALL relevant details from ANY email mentioning it (schedule changes, what to bring, permissions, costs, dress code)\n- Source emails that mentioned it\n\n**CRITICAL**: If the raw email data contains events for Monday, Tuesday, Thursday, and Friday, your event_calendar MUST have entries for ALL FOUR days. Do not drop events. Each distinct event (different date or different name) must be included.\n\n**CRITICAL**: If multiple emails mention the same event (e.g., \"Raven Run\" mentioned in 3 emails), COMBINE all details into ONE event entry. Do not list it 3 times.\n\n## SECTION 2: ACTION ITEMS (What Parents Must Do)\nExtract specific actions requiring parent response:\n- Sign-up deadlines\n- Permission slips due\n- Items to bring/purchase\n- Volunteer opportunities\n- Conference scheduling\n\n## SECTION 3: IMPORTANT ANNOUNCEMENTS\nExtract key information that is not an event or action:\n- Schedule changes\n- Policy updates  \n- General reminders\n- Future planning notices\n\n**CRITICAL RULES:**\n\n1. **DEDUPLICATE EVENTS**: \"Raven Run\" mentioned in 3 emails = 1 event entry with combined details\n2. **BE SPECIFIC**: Use exact event names, dates, times from the emails\n3. **CONSOLIDATE DETAILS**: If Email A says \"Raven Run Monday\" and Email B says \"Raven Run at 1:45 PM on school field\", combine into: \"Raven Run on Monday, October 27th at 1:45 PM on the school field\"\n4. **WEDNESDAY EARLY RELEASE**: Mark as LOW priority, note ELC attendance (no pickup change)\n5. **NO VAGUE DESCRIPTIONS**: Every event must have a specific name, not \"field trip\" but \"Pumpkin Patch Field Trip\"\n\nReturn as JSON:\n{\n  \"executive_summary\": \"2-3 sentence overview of the week's most important items\",\n  \"event_calendar\": [\n    {\n      \"title\": \"Specific event name (e.g., 'Raven Run', not 'running event')\",\n      \"date\": \"Full date with day (e.g., 'Monday, October 27th')\",\n      \"time\": \"Exact time or range (e.g., '1:45 PM' or '7:45 AM - 11:45 AM')\",  \n      \"location\": \"Specific location\",\n      \"details\": \"COMPREHENSIVE details: schedule modifications, items needed, permissions, costs, dress code, transportation - combine info from all emails mentioning this event\",\n      \"sources\": [\"List of email subjects that mentioned this event\"]\n    }\n  ],\n  \"action_items\": [\n    {\n      \"action\": \"Specific action parents must take\",\n      \"due_date\": \"Exact deadline\",\n      \"priority\": \"high/medium/low (low for Wednesday early release)\",\n      \"details\": \"Additional context or instructions\"\n    }\n  ],\n  \"important_announcements\": [\n    \"String with announcement text - NOT a dict, just the text itself\"\n  ]\n}\n\n**CRITICAL**: important_announcements should be an array of STRINGS, not dicts. Just: [\"Announcement text here\", \"Another announcement\"]\n\nFocus on being specific, comprehensive, and actionable. Parents need to know EXACTLY what's happening and what they need to do."
+  },
+
+  "document": {
+    "title_template": "CUSD Email Digest - {date}",
+    "subtitle": "Compiled by CUSD Email Summarizer",
+    "sections": [
+      {
+        "name": "executive_summary",
+        "title": "Executive Summary",
+        "type": "text"
+      },
+      {
+        "name": "event_calendar",
+        "title": "Upcoming Events",
+        "type": "table",
+        "columns": ["Event", "Date", "Time", "Location"]
+      },
+      {
+        "name": "event_details",
+        "title": "Event Details",
+        "type": "detailed_list"
+      },
+      {
+        "name": "action_items",
+        "title": "Action Items",
+        "type": "priority_list"
+      },
+      {
+        "name": "important_announcements",
+        "title": "Important Announcements",
+        "type": "bullet_list"
+      },
+      {
+        "name": "individual_emails",
+        "title": "Individual Email Summaries",
+        "type": "email_summaries"
+      }
+    ]
+  },
+
+  "output": {
+    "directory": "./output/cusd",
+    "filename_pattern": "CUSD_Digest_{date}.docx"
+  },
+
+  "database": {
+    "path": "./data/cusd_emails.db"
+  },
+
+  "logging": {
+    "file": "./logs/cusd_summarizer.log"
+  }
+}
