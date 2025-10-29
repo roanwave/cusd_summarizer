@@ -1,0 +1,17 @@
+# Google API
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+google-api-python-client>=2.100.0
+
+# Anthropic Claude API
+anthropic>=0.34.0
+
+# Document Generation
+python-docx>=1.1.0
+
+# Standard library (included for reference)
+# sqlite3 - Built-in
+# json - Built-in
+# datetime - Built-in
+# pathlib - Built-in

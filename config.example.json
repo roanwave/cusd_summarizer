@@ -1,0 +1,27 @@
+{
+  "gmail": {
+    "credentials_file": "config/credentials.json",
+    "token_file": "config/token.pickle",
+    "label": "CUSD"
+  },
+  "anthropic": {
+    "api_key": "your-anthropic-api-key-here",
+    "model": "claude-sonnet-4-20250514"
+  },
+  "processing": {
+    "lookback_hours": 72,
+    "max_emails": 50,
+    "body_char_limit": 8000
+  },
+  "output": {
+    "directory": "output",
+    "email_to": "your-email@example.com"
+  },
+  "database": {
+    "path": "data/processed_emails.db"
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "logs/cusd_summarizer.log"
+  }
+}
