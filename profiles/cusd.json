@@ -60,6 +60,9 @@
       }
     ]
   },
+  "email": {
+    "subject_pattern": "CUSD Daily Digest - {date}"
+  },
   "output": {
     "directory": "./output/cusd",
     "filename_pattern": "CUSD_Digest_{date}.docx"

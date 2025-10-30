@@ -14,9 +14,16 @@ logger = get_logger(__name__)
 class DocumentGenerator:
     """Handles Word document generation for the CUSD Email Summarizer."""
 
-    def __init__(self, output_dir: str = "output"):
-        """Initialize with optional output directory (kept for compatibility)."""
+    def __init__(self, output_dir: str = "output", filename_pattern: str = None):
+        """Initialize with optional output directory and filename pattern.
+
+        Args:
+            output_dir: Directory for output files.
+            filename_pattern: Pattern for output filename (e.g., "CUSD_Digest_{date}.docx").
+                            {date} will be replaced with formatted date.
+        """
         self.output_dir = output_dir
+        self.filename_pattern = filename_pattern or "Digest_{date}.docx"
         self.doc = Document()
 
     # ----------------------------------------------------------------------
@@ -39,7 +46,9 @@ class DocumentGenerator:
             raise ValueError("Missing required digest data.")
         if output_path is None:
             timestamp = datetime.now().strftime("%B_%d_%Y")
-            output_path = os.path.join(self.output_dir, f"CUSD_Digest_{timestamp}.docx")
+            # Use filename_pattern from config, replacing {date} placeholder
+            filename = self.filename_pattern.replace("{date}", timestamp)
+            output_path = os.path.join(self.output_dir, filename)
 
         logger.debug(
             "create_digest_document() invoked "

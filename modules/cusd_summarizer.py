@@ -98,7 +98,11 @@ class CUSDSummarizer:
         output_dir = self.config.resolve_path(
             self.config.get('output', 'directory')
         )
-        self.doc_generator = DocumentGenerator(output_dir=str(output_dir))
+        filename_pattern = self.config.get('output', 'filename_pattern')
+        self.doc_generator = DocumentGenerator(
+            output_dir=str(output_dir),
+            filename_pattern=filename_pattern
+        )
 
         self.logger.info(f"All components initialized successfully for profile: {self.profile}")
     
