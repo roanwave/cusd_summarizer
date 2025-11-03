@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 import json
 import re
+import calendar
 
 import anthropic
 
@@ -257,7 +258,131 @@ class AISummarizer:
                 'importance': 'medium',
                 'key_dates': []
             }
-    
+
+    def _correct_date_day_of_week(self, date_str: str, current_year: Optional[int] = None) -> str:
+        """Correct day-of-week in date strings to match actual calendar.
+
+        Args:
+            date_str: Date string like "Monday, November 4th" or "Nov 4"
+            current_year: Year to use for date calculation (defaults to current year)
+
+        Returns:
+            Corrected date string with accurate day-of-week
+        """
+        if not date_str or date_str in ['TBD', 'N/A', '']:
+            return date_str
+
+        try:
+            # Use current year if not specified
+            if current_year is None:
+                current_year = datetime.now().year
+
+            # Pattern: "DayName, Month Day" or "DayName, Month Dayth/st/nd/rd"
+            # Examples: "Monday, November 4th", "Tuesday, Nov 4"
+            pattern = r'(\w+day),?\s+(\w+)\s+(\d+)(?:st|nd|rd|th)?'
+            match = re.search(pattern, date_str, re.IGNORECASE)
+
+            if match:
+                day_name = match.group(1)
+                month_name = match.group(2)
+                day_num = int(match.group(3))
+
+                # Parse the month
+                try:
+                    month_num = datetime.strptime(month_name, '%B').month
+                except ValueError:
+                    try:
+                        month_num = datetime.strptime(month_name, '%b').month
+                    except ValueError:
+                        logger.warning(f"Could not parse month from: {month_name}")
+                        return date_str
+
+                # Create date object and get correct day-of-week
+                try:
+                    date_obj = datetime(current_year, month_num, day_num)
+                    correct_day_name = date_obj.strftime('%A')
+
+                    # If day-of-week is wrong, correct it
+                    if day_name.lower() != correct_day_name.lower():
+                        logger.info(f"Correcting date: '{date_str}' - {day_name} should be {correct_day_name}")
+                        # Replace the day name in the original string
+                        corrected = date_str.replace(day_name, correct_day_name, 1)
+                        return corrected
+
+                except ValueError as e:
+                    logger.warning(f"Invalid date: {month_name} {day_num}, {current_year} - {e}")
+                    return date_str
+
+            return date_str
+
+        except Exception as e:
+            logger.error(f"Error correcting date '{date_str}': {e}")
+            return date_str
+
+    def _correct_digest_dates(self, digest: Dict[str, Any]) -> Dict[str, Any]:
+        """Correct all day-of-week values in digest event dates.
+
+        Args:
+            digest: Digest dictionary with event_calendar
+
+        Returns:
+            Digest with corrected dates
+        """
+        current_year = datetime.now().year
+
+        # Correct dates in event_calendar
+        if 'event_calendar' in digest and isinstance(digest['event_calendar'], list):
+            for event in digest['event_calendar']:
+                if isinstance(event, dict) and 'date' in event:
+                    original_date = event['date']
+                    corrected_date = self._correct_date_day_of_week(original_date, current_year)
+                    if corrected_date != original_date:
+                        event['date'] = corrected_date
+
+        # Correct dates in action_items (if they have due_date)
+        if 'action_items' in digest and isinstance(digest['action_items'], list):
+            for item in digest['action_items']:
+                if isinstance(item, dict):
+                    if 'due_date' in item:
+                        original = item['due_date']
+                        corrected = self._correct_date_day_of_week(original, current_year)
+                        if corrected != original:
+                            item['due_date'] = corrected
+                    if 'deadline' in item:
+                        original = item['deadline']
+                        corrected = self._correct_date_day_of_week(original, current_year)
+                        if corrected != original:
+                            item['deadline'] = corrected
+
+        # Correct dates in compliance_items (HOA profile)
+        if 'compliance_items' in digest and isinstance(digest['compliance_items'], list):
+            for item in digest['compliance_items']:
+                if isinstance(item, dict) and 'deadline' in item:
+                    original = item['deadline']
+                    corrected = self._correct_date_day_of_week(original, current_year)
+                    if corrected != original:
+                        item['deadline'] = corrected
+
+        # Correct dates in financial_notices (HOA profile)
+        if 'financial_notices' in digest and isinstance(digest['financial_notices'], list):
+            for item in digest['financial_notices']:
+                if isinstance(item, dict) and 'due_date' in item:
+                    original = item['due_date']
+                    corrected = self._correct_date_day_of_week(original, current_year)
+                    if corrected != original:
+                        item['due_date'] = corrected
+
+        # Correct dates in maintenance_schedule (HOA profile)
+        if 'maintenance_schedule' in digest and isinstance(digest['maintenance_schedule'], list):
+            for item in digest['maintenance_schedule']:
+                if isinstance(item, dict) and 'dates' in item:
+                    original = item['dates']
+                    corrected = self._correct_date_day_of_week(original, current_year)
+                    if corrected != original:
+                        item['dates'] = corrected
+
+        return digest
+
     def create_digest(
         self,
         email_summaries: List[Dict[str, Any]],
@@ -404,7 +529,10 @@ Focus on being specific, comprehensive, and actionable. Parents need to know EXA
             
             response_text = response.content[0].text
             digest = self._parse_summary_response(response_text)
-            
+
+            # Correct any date/day-of-week mismatches
+            digest = self._correct_digest_dates(digest)
+
             logger.info("Successfully created consolidated digest")
             return digest
             

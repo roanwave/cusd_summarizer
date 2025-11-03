@@ -371,15 +371,24 @@ class DocumentGenerator:
             lines.append("  No events found.")
         else:
             for event in events:
-                event_line = f"  • {event.get('date', 'N/A')} - {event.get('event', 'No title')}"
+                # Get event title - check both 'event' and 'title' keys for compatibility
+                event_title = event.get('event') or event.get('title')
+
+                # Start with date
+                event_line = f"  • {event.get('date', 'N/A')}"
+
+                # Only add title if it exists and is not empty
+                if event_title:
+                    event_line += f" - {event_title}"
+
                 if event.get("time"):
                     event_line += f" at {event['time']}"
                 if event.get("location"):
                     event_line += f" ({event['location']})"
                 lines.append(event_line)
-                
+
                 # Add ELC note if Early Release
-                if "Early Release" in event.get("event", ""):
+                if event_title and "Early Release" in event_title:
                     lines.append("    Note: Student attends ELC - no pickup change needed.")
         lines.append("")
         

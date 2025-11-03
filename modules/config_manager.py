@@ -39,7 +39,7 @@ class Config:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
 
-        with open(self.config_path, 'r') as f:
+        with open(self.config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
     def _load_profile_config(self, profile_name: str) -> Dict[str, Any]:
@@ -60,7 +60,7 @@ class Config:
                 f"Available profiles should be in the 'profiles/' directory."
             )
 
-        with open(profile_path, 'r') as f:
+        with open(profile_path, 'r', encoding='utf-8') as f:
             return json.load(f)
 
     def _merge_configs(self, base: Dict[str, Any], profile: Dict[str, Any]) -> Dict[str, Any]:
