@@ -318,6 +318,102 @@ class CUSDSummarizer:
         self.logger.info("Cleanup completed")
 
 
+def run_single_profile(config_path: str, profile: str, force_reprocess: bool, stats_only: bool) -> Dict[str, Any]:
+    """Run the summarizer for a single profile.
+
+    Args:
+        config_path: Optional path to config file.
+        profile: Profile name to use.
+        force_reprocess: If True, reprocess all emails.
+        stats_only: If True, just return stats without running.
+
+    Returns:
+        Dictionary with results or stats.
+    """
+    summarizer = None
+    try:
+        summarizer = CUSDSummarizer(config_path=config_path, profile=profile)
+
+        if stats_only:
+            return {'profile': profile, 'stats': summarizer.get_stats()}
+
+        results = summarizer.run(force_reprocess=force_reprocess)
+        results['profile'] = profile
+        return results
+
+    finally:
+        if summarizer:
+            summarizer.cleanup()
+
+
+def run_all_profiles(config_path: str, force_reprocess: bool, stats_only: bool) -> Dict[str, Any]:
+    """Run the summarizer for all profiles (cusd and hoa) sequentially.
+
+    Args:
+        config_path: Optional path to config file.
+        force_reprocess: If True, reprocess all emails.
+        stats_only: If True, just return stats without running.
+
+    Returns:
+        Dictionary with combined results from all profiles.
+    """
+    profiles = ['cusd', 'hoa']
+    combined_results = {
+        'mode': 'all_profiles',
+        'profiles_run': [],
+        'profiles_failed': [],
+        'profile_results': {},
+        'combined_stats': {
+            'total_emails_found': 0,
+            'total_emails_processed': 0,
+            'total_emails_skipped': 0,
+            'total_digests_created': 0,
+            'total_digests_sent': 0,
+            'total_errors': 0
+        }
+    }
+
+    for profile in profiles:
+        print(f"\n{'='*60}")
+        print(f"Running profile: {profile.upper()}")
+        print(f"{'='*60}")
+
+        try:
+            result = run_single_profile(
+                config_path=config_path,
+                profile=profile,
+                force_reprocess=force_reprocess,
+                stats_only=stats_only
+            )
+
+            combined_results['profiles_run'].append(profile)
+            combined_results['profile_results'][profile] = result
+
+            if not stats_only:
+                # Aggregate statistics
+                combined_results['combined_stats']['total_emails_found'] += result.get('emails_found', 0)
+                combined_results['combined_stats']['total_emails_processed'] += result.get('emails_processed', 0)
+                combined_results['combined_stats']['total_emails_skipped'] += result.get('emails_skipped', 0)
+                combined_results['combined_stats']['total_digests_created'] += 1 if result.get('digest_created') else 0
+                combined_results['combined_stats']['total_digests_sent'] += 1 if result.get('digest_sent') else 0
+                combined_results['combined_stats']['total_errors'] += len(result.get('errors', []))
+
+            print(f"\n[{profile.upper()}] Completed successfully")
+
+        except Exception as e:
+            error_msg = str(e)
+            print(f"\n[{profile.upper()}] FAILED: {error_msg}")
+            combined_results['profiles_failed'].append(profile)
+            combined_results['profile_results'][profile] = {
+                'profile': profile,
+                'error': error_msg,
+                'success': False
+            }
+            # Continue to next profile - don't let one failure stop the others
+
+    return combined_results
+
+
 def main():
     """Main entry point for command-line execution."""
     import argparse
@@ -334,7 +430,7 @@ def main():
         '--profile',
         type=str,
         default=None,
-        help='Profile to use (cusd, hoa, etc.). If not specified, uses default_profile from config.'
+        help='Profile to use (cusd, hoa, all). Use "all" to run both cusd and hoa sequentially. If not specified, uses default_profile from config.'
     )
     parser.add_argument(
         '--force',
@@ -350,30 +446,51 @@ def main():
     args = parser.parse_args()
 
     try:
-        summarizer = CUSDSummarizer(config_path=args.config, profile=args.profile)
-        
-        if args.stats:
-            # Just show stats
-            stats = summarizer.get_stats()
-            print("\n=== CUSD Summarizer Statistics ===")
-            print(json.dumps(stats, indent=2))
-            return
-        
-        # Run the summarizer
-        results = summarizer.run(force_reprocess=args.force)
-        
-        # Print results
-        print("\n=== Execution Results ===")
-        print(json.dumps(results, indent=2, default=str))
-        
+        # Handle --profile all: run both profiles sequentially
+        if args.profile and args.profile.lower() == 'all':
+            results = run_all_profiles(
+                config_path=args.config,
+                force_reprocess=args.force,
+                stats_only=args.stats
+            )
+
+            # Print combined results
+            if args.stats:
+                print("\n=== Combined Statistics (All Profiles) ===")
+            else:
+                print("\n=== Combined Execution Results (All Profiles) ===")
+            print(json.dumps(results, indent=2, default=str))
+
+            # Exit with error code if any profile failed
+            if results['profiles_failed']:
+                print(f"\nWarning: {len(results['profiles_failed'])} profile(s) failed: {results['profiles_failed']}")
+
+        else:
+            # Single profile mode (existing behavior)
+            summarizer = CUSDSummarizer(config_path=args.config, profile=args.profile)
+
+            try:
+                if args.stats:
+                    # Just show stats
+                    stats = summarizer.get_stats()
+                    print("\n=== Email Summarizer Statistics ===")
+                    print(json.dumps(stats, indent=2))
+                    return
+
+                # Run the summarizer
+                results = summarizer.run(force_reprocess=args.force)
+
+                # Print results
+                print("\n=== Execution Results ===")
+                print(json.dumps(results, indent=2, default=str))
+            finally:
+                summarizer.cleanup()
+
     except KeyboardInterrupt:
         print("\nInterrupted by user")
     except Exception as e:
         print(f"\nFatal error: {e}")
         raise
-    finally:
-        if 'summarizer' in locals():
-            summarizer.cleanup()
 
 
 if __name__ == '__main__':
